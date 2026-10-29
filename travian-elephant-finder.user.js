@@ -2,7 +2,7 @@
 // @name         Travian Elephant Finder (userscript)
 // @namespace    travian-elephant-finder
 // @version      0.3.5
-// @description  Recherche les oasis gardées par des éléphants autour de votre village, depuis votre session de jeu déjà ouverte.
+// @description  Finds oases guarded by elephants around your village, straight from your logged-in game session.
 // @match        https://*.travian.com/*
 // @grant        none
 // @run-at       document-idle
