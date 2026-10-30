@@ -13,7 +13,7 @@ The script runs on every `*.travian.com` game world. It only shows up on game pa
 ## Usage
 
 1. Click **🐘 Éléphants** to open the panel.
-2. The center is pre-filled with your active village's coordinates. Change it if you like, or click **Mon village** to reset it.
+2. The center is pre-filled with your active village's coordinates. Pick another one of your villages in the **Mes villages…** dropdown (the active village is marked with ●), or type any coordinates.
 3. Pick a radius, then click **Lancer le scan**.
 4. Elephant oases appear as map blocks come in, sorted by distance, each with a direct link to the map. Tick **Toutes les oasis** to also list oases without elephants.
 5. **Exporter CSV** saves the current table.

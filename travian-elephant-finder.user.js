@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Travian Elephant Finder (userscript)
 // @namespace    travian-elephant-finder
-// @version      0.3.5
+// @version      0.4.0
 // @description  Finds oases guarded by elephants around your village, straight from your logged-in game session.
 // @match        https://*.travian.com/*
 // @grant        none
@@ -96,16 +96,40 @@
     return res.json();
   }
 
-  // Coordonnées du village actif, lues dans la page (le jeu rend le moins en U+2212).
+  // Lit un nombre dans un élément de coordonnée (le jeu rend le moins en U+2212).
+  function readCoord(el) {
+    if (!el) return null;
+    const n = el.textContent.replace(/−/g, '-').replace(/[^0-9-]/g, '');
+    return n === '' || n === '-' ? null : parseInt(n, 10);
+  }
+
+  // Tous mes villages, lus dans la liste de la barre latérale du jeu.
+  function ownVillages() {
+    const entries = [...document.querySelectorAll('#sidebarBoxVillageList .listEntry.village, #sidebarBoxVillagelist .listEntry.village, .villageList .listEntry')];
+    const seen = new Set();
+    const villages = [];
+    for (const el of entries) {
+      const x = readCoord(el.querySelector('.coordinateX'));
+      const y = readCoord(el.querySelector('.coordinateY'));
+      if (x === null || y === null) continue;
+      const link = el.querySelector('a[href*="newdid="]');
+      const did = el.dataset.did || (link ? (link.href.match(/newdid=(\d+)/) || [])[1] : null) || key(x, y);
+      if (seen.has(did)) continue;
+      seen.add(did);
+      const nameEl = el.querySelector('.name');
+      const name = (nameEl ? nameEl.textContent : (link ? link.textContent : '')).trim() || `Village ${villages.length + 1}`;
+      const active = el.classList.contains('active') || !!(link && link.classList.contains('active'));
+      villages.push({ did, name, x, y, active });
+    }
+    return villages;
+  }
+
+  // Coordonnées du village actif : entrée active de la liste, sinon première coordonnée de la page.
   function ownCoordinates() {
-    const read = (sel) => {
-      const el = document.querySelector(sel);
-      if (!el) return null;
-      const n = el.textContent.replace(/−/g, '-').replace(/[^0-9-]/g, '');
-      return n === '' || n === '-' ? null : parseInt(n, 10);
-    };
-    const x = read('.coordinateX');
-    const y = read('.coordinateY');
+    const active = ownVillages().find((v) => v.active);
+    if (active) return { x: active.x, y: active.y };
+    const x = readCoord(document.querySelector('.coordinateX'));
+    const y = readCoord(document.querySelector('.coordinateY'));
     return x === null || y === null ? null : { x, y };
   }
 
@@ -381,18 +405,21 @@
     #tef .row{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin-bottom:8px}
     #tef label{display:flex;align-items:center;gap:4px;color:#94a3b8}
     #tef input{width:64px;background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:2px 4px}
+    #tef select{max-width:220px;background:#1e293b;color:#e2e8f0;border:1px solid #475569;border-radius:4px;padding:2px 4px}
     #tef button{background:#334155;color:#fff;border:0;border-radius:4px;padding:4px 10px;cursor:pointer}
     #tef button.primary{background:#ea580c}
     #tef button:disabled{opacity:.5;cursor:default}
     #tef .bar{height:6px;background:#1e293b;border-radius:3px;overflow:hidden;margin:4px 0}
     #tef .bar>div{height:100%;background:#38bdf8;width:0}
     #tef .status{color:#94a3b8;min-height:16px}
-    #tef table{width:100%;border-collapse:collapse;margin-top:8px}
-    #tef th,#tef td{padding:4px 6px;border-bottom:1px solid #1e293b;text-align:left;white-space:nowrap}
-    #tef th{color:#94a3b8;font-size:11px;text-transform:uppercase}
+    /* Le jeu applique ses propres styles aux tableaux (fond clair, texte clair) : on force les nôtres. */
+    #tef table{width:100%;border-collapse:collapse;margin-top:8px;background:transparent!important;border:0!important}
+    #tef thead,#tef tbody,#tef tr{background:transparent!important}
+    #tef th,#tef td{padding:4px 6px!important;border:0!important;border-bottom:1px solid #1e293b!important;text-align:left;white-space:nowrap;background:transparent!important;color:#e2e8f0!important;font:13px system-ui,sans-serif!important;vertical-align:middle}
+    #tef th{color:#94a3b8!important;font-size:11px!important;text-transform:uppercase;font-weight:600!important}
     #tef td.n{text-align:right}
-    #tef a{color:#38bdf8;font-weight:600;text-decoration:none}
-    #tef .ele{color:#f97316;font-weight:800}
+    #tef a{color:#38bdf8!important;font-weight:600;text-decoration:none}
+    #tef .ele{color:#f97316!important;font-weight:800}
     #tef pre{background:#020617;color:#94a3b8;padding:6px;border-radius:4px;max-height:110px;overflow:auto;white-space:pre-wrap;font-size:11px;margin:6px 0 0}
   `;
 
@@ -402,17 +429,27 @@
     const panel = document.createElement('div'); panel.id = 'tef'; panel.style.display = 'none'; document.body.appendChild(panel);
     btn.onclick = () => { panel.style.display = panel.style.display === 'none' ? 'block' : 'none'; };
 
+    const villages = ownVillages();
     const own = ownCoordinates();
     const s = state.settings;
-    // Coordonnées saisies la dernière fois, sinon celles du village actif.
+    // Coordonnées de la dernière recherche, sinon celles du village actif (la liste
+    // déroulante se cale ensuite sur le village correspondant, s'il y en a un).
     const startX = Number.isFinite(s.centerX) ? s.centerX : (own ? own.x : '');
     const startY = Number.isFinite(s.centerY) ? s.centerY : (own ? own.y : '');
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    // Liste déroulante de mes villages ; si la liste n'est pas lisible, simple bouton de repli.
+    const villagePicker = villages.length
+      ? `<select id="tef-village" title="Centrer la recherche sur un de mes villages">
+          <option value="">Mes villages…</option>
+          ${villages.map((v, i) => `<option value="${i}">${esc(v.name)} (${v.x}|${v.y})${v.active ? ' ●' : ''}</option>`).join('')}
+        </select>`
+      : '<button id="tef-own" title="Reprendre les coordonnées du village actif">Mon village</button>';
     panel.innerHTML = `
       <h3>🐘 Elephant Finder <span style="color:#64748b;font-weight:400">· ${ORIGIN.replace('https://', '')}</span></h3>
       <div class="row">
         <label>Centre X <input id="tef-x" value="${startX}"></label>
         <label>Y <input id="tef-y" value="${startY}"></label>
-        <button id="tef-own" title="Reprendre les coordonnées du village actif">Mon village</button>
+        ${villagePicker}
         <label>Rayon <input id="tef-r" value="${s.distance}"></label>
       </div>
       <div class="row">
@@ -471,11 +508,31 @@
       saveState();
     };
     ['tef-x', 'tef-y', 'tef-r', 'tef-dmin', 'tef-dmax', 'tef-mmin', 'tef-mmax'].forEach((id) => { $(id).addEventListener('change', remember); });
-    $('tef-own').onclick = () => {
-      const o = ownCoordinates();
-      if (!o) { ui.log('Coordonnées du village introuvables sur cette page.'); return; }
-      $('tef-x').value = o.x; $('tef-y').value = o.y; remember();
+    // Le centre est mémorisé à chaque frappe, pour survivre à un rechargement immédiat.
+    ['tef-x', 'tef-y'].forEach((id) => { $(id).addEventListener('input', remember); });
+    // Sélectionne dans la liste le village qui correspond aux coordonnées saisies.
+    const syncVillage = () => {
+      const sel = $('tef-village'); if (!sel) return;
+      const x = parseInt($('tef-x').value, 10); const y = parseInt($('tef-y').value, 10);
+      const i = villages.findIndex((v) => v.x === x && v.y === y);
+      sel.value = i >= 0 ? String(i) : '';
     };
+    if ($('tef-village')) {
+      $('tef-village').addEventListener('change', (e) => {
+        const v = villages[parseInt(e.target.value, 10)];
+        if (!v) return;
+        $('tef-x').value = v.x; $('tef-y').value = v.y; remember();
+      });
+      ['tef-x', 'tef-y'].forEach((id) => $(id).addEventListener('input', syncVillage));
+      syncVillage();
+    }
+    if ($('tef-own')) {
+      $('tef-own').onclick = () => {
+        const o = ownCoordinates();
+        if (!o) { ui.log('Coordonnées du village introuvables sur cette page.'); return; }
+        $('tef-x').value = o.x; $('tef-y').value = o.y; remember();
+      };
+    }
 
     $('tef-start').onclick = async () => {
       if (running) return;
